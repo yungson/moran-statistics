@@ -10,5 +10,5 @@ Consider the following grid image. Which one do you think is completely random? 
 
 ## The result
 According to the result, Grid 1 is random, grid 2 and grid 3 is not!
-see the details at [here](https://raw.githack.com/yungson/moran-statistics/main/moran-stats.html)
+see the details at [here](https://raw.githack.com/yungson/moran-statistics/main/moran-stat.html)
 
