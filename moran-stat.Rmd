@@ -1,0 +1,162 @@
+---
+title: Using a moran's statistics to to hypothesis tests to judge whether a grid is
+  random or not
+author: "liyongsheng"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+grid1 = read.table("Grid1.txt")
+grid2 = read.table("Grid2.txt")
+grid3 = read.table("Grid3.txt")
+```
+
+
+Introduction: This implementation uses moran's I statistic to test if the grid is random or not. I found this statistic by the inspiration of how to calculate metric like pearson's correlation coefficient and some concepts about spatial statistics. After some searches, I reached the moran's I statistic
+
+Moran's I is a statistic to measure global spatial auto-correlations. It can determine its pattern. Moran's I is between -1 and 1 and there are typically there patterns: 
+- spatially clustered, homogeneity in a specific space, this will make moran's I closer to 1.
+- spatially spaced, heterogeneity in a specific space, this will make moran's I closer to -1.
+- spatially randomly distributed, this will make moran's I closer to 0.
+
+The formula to calculate Moran's I is as follows:
+
+$$
+I = \frac{n}{\sum_{i=1}^n(y_i-\bar{y})^2}\cdot{\frac{\sum_{i=1}^n\sum_{j=1}^nw_{ij}(y_i-\bar{y})(y_j-\bar{y})}{\sum_{i=1}^n\sum_{j=1}^nw_{ij}}}
+$$
+where:
+
+- $y_i$ denote the value in the cell, $y_i$=1 for black cells, $y_i$=0 for white cells
+- $\bar{y}$ is the mean of all gird cells
+- $n$ is the number of cells, in our case $n=25\cdot{25}=625$
+- $w_{ij}$ is the weight when calculatin cell $y_i$ and cell $y_j$. Here we define $w_{ij}=1$ if cell $y_i$ and cell $y_j$ are adjacent, $w_{ij}=0$ otherwise.
+
+
+
+```{r}
+# this part is to generate weights for any two cells in a grid.
+# given a cell (a,b), where a is row index, b is the column index,
+# and n is the square grid index(in our case, n=25), this part 
+# will finally generate a (n*n*n*n X 1) vector in which every n*n rows 
+# denote the weight of the given cell (a,b) with all of the other cells. 
+
+if_adjacent = function(a,b,n){
+  # a function to determine all the n*n cells are adjacent with cell (a,b)
+  res = numeric(0)
+  for(j in 1:n){
+    for(i in 1:n){
+      if((abs(i-a)==1 & j==b) |(abs(j-b)==1 & i==a)){
+        # either row index differ by one or column index does, but not both
+        res = c(res,1) # adjacent
+      }else{
+        res = c(res,0) # not adjacent
+      }
+    }
+  }
+  return(res)
+}
+
+# generate all the weight vector
+n=25
+w = numeric(0) 
+for(b in 1:n){
+  for(a in 1:n){
+    w = c(w,if_adjacent(a,b,n))
+  }
+}
+```
+
+
+```{r}
+# function to calculate moran's I statistic
+cal_moran = function(grid){
+  grid = as.matrix(grid)
+  y_bar = mean(grid) #mean of all grid cells
+  delta_y = grid - y_bar #value of each cell subtracted by mean
+  delta_y_pair = expand.grid(delta_y, delta_y) #expanded by column
+  delta_y_product = delta_y_pair["Var1"]*delta_y_pair["Var2"]
+  # n*n is the actual n in the formula, the number of cells
+  # delta_y_product*w is the numerator of the right fraction part in the formula
+  # sum(delta_y^2) is the denominator of the left fraction part in the formula
+  # sum(sum(w)) is the denominator of the right fraction part in the formula
+  moran = n*n*sum(delta_y_product*w)/(sum(delta_y^2)*sum(sum(w)))
+  return(moran)
+}
+
+```
+
+
+```{r}
+# given a grid needed to be tested, calculate its black cell numbers and 
+# permutate them randomly and return the permutated matrix. 
+permutation = function(grid,seed){
+  set.seed(seed)
+  black_num = sum(grid1)
+  dims = dim(grid1)
+  result = numeric(dims[1]*dims[2])
+  # random sample some of the cells to be black(let its value equal 1)
+  result[sample(1:(dims[1]*dims[2]),black_num)]=1
+  return(matrix(result, nrow=dims[1]))
+}
+```
+
+```{r}
+# the main randomness test function
+# original_grid: the grid need to be tested
+# size: how many simulations do you want
+
+randomness_test = function(original_grid, size){
+  moran_stats = numeric(0)
+  for(i in 1:size){
+    grid = permutation(original_grid, i+1999)
+    # store moran's I for each simulated grid
+    moran_stats = c(moran_stats,cal_moran(grid))
+  }
+  original_moran = cal_moran(original_grid)
+  temp = c(moran_stats,original_moran)
+  # calculate the moran's I percentile of the original grid, in  
+  # the sorted moran's Is of all the simulated grids
+  percentile = match(original_moran,sort(temp))/size
+  return(list(moran_stats = moran_stats,
+              percentile = percentile,
+              original_moran = original_moran))
+}
+```
+
+
+### grid1 test results
+```{r}
+grid1_test = randomness_test(grid1,size=1000)
+hist(grid1_test$moran_stats)
+abline(v=grid1_test$original_moran,col="red")
+cat("percentile of grid1: ",grid1_test$percentile, "\n")
+```
+
+The percentile is 0.873, reasonably falls in the range of moran's I of randomly simulated data. The histogram also indicate the grid1 is right in the normal histogram area(the null distribution). Therefore, we do not reject that grid1 is randomly distributed.
+
+### grid2 test results
+```{r}
+grid2_test = randomness_test(grid2,size=1000)
+hist(grid2_test$moran_stats,xlim=c(-0.2,0.4))
+abline(v=grid2_test$original_moran,col="red")
+cat("percentile of grid2: ",grid2_test$percentile, "\n")
+```
+
+The percentile>1 is far beyond the range of moran's I of randomly simulated data. The histogram also indicate the grid2 is not in the normal histogram area(the null distribution), like an outlier. Therefore, we reject that grid2 is randomly distributed.
+
+
+### grid3 test results
+```{r}
+grid3_test = randomness_test(grid3,size=1000)
+hist(grid3_test$moran_stats,xlim=c(-0.15,0.15))
+abline(v=grid3_test$original_moran,col="red")
+cat("percentile of grid3: ",grid3_test$percentile, "\n")
+```
+
+The percentile>1 is far beyond the range of moran's I of randomly simulated data. The histogram also indicate the grid3 is not in the normal histogram area(the null distribution), like an outlier. Therefore, we reject that grid3 is randomly distributed.
+
